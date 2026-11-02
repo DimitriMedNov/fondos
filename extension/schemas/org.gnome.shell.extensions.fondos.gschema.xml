@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.fondos" path="/org/gnome/shell/extensions/fondos/">
+    <key name="auto" type="b">
+      <default>true</default>
+      <summary>Cambiar el fondo cada día</summary>
+    </key>
+    <key name="fuente" type="s">
+      <choices>
+        <choice value="ambas"/>
+        <choice value="unsplash"/>
+        <choice value="nasa"/>
+      </choices>
+      <default>'ambas'</default>
+      <summary>De dónde salen las fotos</summary>
+    </key>
+    <key name="ultimo-dia" type="s">
+      <default>''</default>
+      <summary>Día del último cambio (AAAA-MM-DD)</summary>
+    </key>
+    <key name="estado" type="s">
+      <default>''</default>
+      <summary>Fotos del fondo actual y acomodo de pantallas (JSON)</summary>
+    </key>
+  </schema>
+</schemalist>
