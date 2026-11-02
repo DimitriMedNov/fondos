@@ -8,11 +8,11 @@
     <key name="fuente" type="s">
       <choices>
         <choice value="ambas"/>
-        <choice value="unsplash"/>
-        <choice value="nasa"/>
+        <choice value="wallhaven"/>
+        <choice value="generados"/>
       </choices>
       <default>'ambas'</default>
-      <summary>De dónde salen las fotos</summary>
+      <summary>De dónde salen los fondos: Wallhaven, generados o ambas</summary>
     </key>
     <key name="ultimo-cambio" type="x">
       <default>0</default>

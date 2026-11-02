@@ -1,4 +1,4 @@
-// Arma el fondo para todas tus pantallas: una foto distinta por pantalla, recortada a su forma
+// Arma el fondo para todas tus pantallas: una imagen distinta por pantalla, recortada a su forma
 // (ancha, ultrawide o vertical) y pegada justo donde está esa pantalla, en una sola imagen que
 // GNOME extiende sobre todas ("spanned"). GNOME solo deja poner una imagen para todas.
 //
@@ -38,7 +38,14 @@ function ajustar(pixbuf, ancho, alto) {
     else
         ch = Math.round(w * alto / ancho);
     const recorte = pixbuf.new_subpixbuf(Math.floor((w - cw) / 2), Math.floor((h - ch) / 2), cw, ch);
-    return recorte.scale_simple(ancho, alto, GdkPixbuf.InterpType.HYPER);
+    const escalada = recorte.scale_simple(ancho, alto, GdkPixbuf.InterpType.HYPER);
+    if (!escalada.get_has_alpha())
+        return escalada;
+    // PNG con transparencia: se aplana sobre negro (el lienzo final no tiene canal alfa).
+    const plana = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, false, 8, ancho, alto);
+    plana.fill(0x000000ff);
+    escalada.composite(plana, 0, 0, ancho, alto, 0, 0, 1, 1, GdkPixbuf.InterpType.NEAREST, 255);
+    return plana;
 }
 
 function borrarViejos(carpeta, prefijo, guardar, enUso) {
@@ -96,7 +103,7 @@ async function main() {
         if (!foto) {
             try {
                 const d = await traer(fuente, ancho, alto, null);
-                const archivo = GLib.build_filenamev([carpeta, `foto-${sello}-${i + 1}-${d.id}.jpg`]);
+                const archivo = GLib.build_filenamev([carpeta, `foto-${sello}-${i + 1}-${d.id}.${d.ext ?? 'jpg'}`]);
                 GLib.file_set_contents(archivo, d.bytes.get_data());
                 foto = {archivo, titulo: d.titulo, autor: d.autor, enlace: d.enlace, fuente: d.fuente};
             } catch (e) {

@@ -1,7 +1,7 @@
-// Fondo del día: cada 30 minutos pone fotos nuevas de Unsplash y de la NASA, una por pantalla y con la
-// forma de cada una (ultrawide, vertical, normal). Se controla desde los Ajustes rápidos (el menú
-// del wifi y la batería): prender o apagar el cambio automático, otro fondo ahora, de dónde salen las
-// fotos y quién las tomó. El trabajo pesado (bajar y recortar) lo hace componer.js aparte.
+// Fondo del día: cada 30 minutos pone fondos abstractos nuevos (de Wallhaven o dibujados aquí mismo),
+// uno por pantalla y con la forma de cada una (ultrawide, vertical, normal). Se controla desde los
+// Ajustes rápidos (el menú del wifi y la batería): prender o apagar el cambio automático, otro fondo
+// ahora y de dónde salen. El trabajo pesado (bajar, dibujar y recortar) lo hace componer.js aparte.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -19,7 +19,7 @@ const CAMBIAR_CADA = 30 * 60; // s entre un fondo y el siguiente
 const REVISAR_CADA = 60; // s: revisa seguido para no pasarse de los 30 min (también al volver de suspender)
 const PRIMERA_REVISION = 20; // s tras entrar: deja que arranque la red
 const ESPERA_MONITORES = 4; // s: al conectar un monitor llegan varios avisos seguidos
-const FUENTES = [['ambas', 'Unsplash y NASA'], ['unsplash', 'Solo Unsplash'], ['nasa', 'Solo NASA']];
+const FUENTES = [['ambas', 'Wallhaven y generados'], ['wallhaven', 'Solo Wallhaven'], ['generados', 'Solo generados']];
 
 const ahora = () => Math.floor(GLib.get_real_time() / 1e6); // s
 
@@ -53,7 +53,7 @@ class Interruptor extends QuickMenuToggle {
         this.menu.addMenuItem(this._otro);
 
         this._fotos = new PopupMenu.PopupMenuSection();
-        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('Fotos de ahora'));
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('Fondos de ahora'));
         this.menu.addMenuItem(this._fotos);
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem('De dónde'));
@@ -65,7 +65,7 @@ class Interruptor extends QuickMenuToggle {
         });
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-        const carpeta = new PopupMenu.PopupImageMenuItem('Abrir la carpeta de fotos', 'folder-pictures-symbolic');
+        const carpeta = new PopupMenu.PopupImageMenuItem('Abrir la carpeta de fondos', 'folder-pictures-symbolic');
         carpeta.connect('activate', () => abrir(Gio.File.new_for_path(ext.carpeta).get_uri()));
         this.menu.addMenuItem(carpeta);
 
@@ -78,10 +78,10 @@ class Interruptor extends QuickMenuToggle {
         const fuente = this._settings.get_string('fuente');
         const auto = this._settings.get_boolean('auto');
         const nombreFuente = FUENTES.find(([c]) => c === fuente)?.[1] ?? '';
-        this.subtitle = ocupado ? 'Buscando fotos…' : nombreFuente.replace('Solo ', '');
+        this.subtitle = ocupado ? 'Buscando fondos…' : nombreFuente.replace('Solo ', '');
         this.menu.setHeader(ICONO, 'Fondo del día',
-            ocupado ? 'Buscando fotos…' : auto ? 'Cambia cada 30 min' : 'Apagado: el fondo no cambia solo');
-        this._otro.label.text = ocupado ? 'Buscando fotos…' : error ? `Reintentar (${error})` : 'Otro fondo ahora';
+            ocupado ? 'Buscando fondos…' : auto ? 'Cambia cada 30 min' : 'Apagado: el fondo no cambia solo');
+        this._otro.label.text = ocupado ? 'Buscando fondos…' : error ? `Reintentar (${error})` : 'Otro fondo ahora';
         this._otro.setSensitive(!ocupado);
         for (const [clave, item] of this._fuentes)
             item.setOrnament(clave === fuente ? PopupMenu.Ornament.CHECK : PopupMenu.Ornament.NONE);
@@ -89,14 +89,16 @@ class Interruptor extends QuickMenuToggle {
         this._fotos.removeAll();
         const fotos = this._ext.estado?.fotos ?? [];
         if (fotos.length === 0) {
-            const vacio = new PopupMenu.PopupMenuItem('Todavía no hay fotos', {reactive: false});
+            const vacio = new PopupMenu.PopupMenuItem('Todavía no hay fondos', {reactive: false});
             this._fotos.addMenuItem(vacio);
         }
         for (const f of fotos) {
             const donde = fotos.length > 1 ? `Pantalla ${f.pantalla}${f.vertical ? ' (vertical)' : ''}: ` : '';
-            const item = new PopupMenu.PopupImageMenuItem(`${donde}${f.titulo} · ${f.fuente}`, 'web-browser-symbolic');
+            // Los de Wallhaven abren su página; los generados abren la imagen.
+            const item = new PopupMenu.PopupImageMenuItem(`${donde}${f.titulo} · ${f.fuente}`,
+                f.enlace ? 'web-browser-symbolic' : 'image-x-generic-symbolic');
             item.label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
-            item.connect('activate', () => abrir(f.enlace));
+            item.connect('activate', () => abrir(f.enlace || Gio.File.new_for_path(f.archivo).get_uri()));
             this._fotos.addMenuItem(item);
         }
     }
@@ -227,7 +229,7 @@ export default class Fondos extends Extension {
             if (resultado.avisos?.length)
                 console.warn(`Fondo del día: ${resultado.avisos.join(' · ')}`);
         } catch (e) {
-            this.error = e.message.length > 60 ? 'sin internet o sin foto' : e.message;
+            this.error = e.message.length > 60 ? 'sin internet o sin fondo' : e.message;
             console.warn(`Fondo del día: ${e.message}`);
             if (manual)
                 Main.notifyError('Fondo del día', `No pude cambiar el fondo: ${e.message}`);

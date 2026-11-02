@@ -1,30 +1,32 @@
 // De dónde salen los fondos, sin claves ni cuentas:
-//  - Unsplash, a través de Picsum (picsum.photos): fotos de Unsplash al azar, ya recortadas al
-//    tamaño de tu pantalla, con su autor y enlace.
-//  - NASA, de su biblioteca de imágenes (images.nasa.gov): busca un tema espacial al azar y elige
-//    una imagen que, recortada a la forma de la pantalla (ancha, ultrawide o vertical), siga
-//    siendo grande.
-// Solo usa GLib/Gio/Soup, así que se puede probar fuera de GNOME Shell con `gjs -m`.
+//  - Wallhaven (wallhaven.cc): fondos de arte abstracto, minimalista, 3D e ilustración, buscados
+//    con la forma de cada pantalla (21:9 para el ultrawide, 9:16 para el vertical…), así casi no
+//    hay que recortar.
+//  - Generados: dibujados aquí mismo con Cairo (ver generar.js), sin internet.
+// Solo usa GLib/Soup/Cairo, así que se puede probar fuera de GNOME Shell con `gjs -m`.
 
-import GdkPixbuf from 'gi://GdkPixbuf';
 import GLib from 'gi://GLib';
 import Soup from 'gi://Soup?version=3.0';
 
-// Temas de búsqueda. Solo se aceptan imágenes científicas (ver CODIGO_CIENTIFICO), así que las
-// fotos de prensa, eventos y laboratorio quedan fuera aunque salgan en la búsqueda.
-const TEMAS_NASA = ['nebula', 'galaxy', 'hubble', 'star cluster', 'supernova', 'spitzer', 'jupiter', 'saturn',
-    'earth', 'aurora', 'earth at night', 'sunrise', 'milky way', 'comet'];
-// PIA… = Photojournal (imágenes científicas), iss…e… = fotos desde la estación espacial,
-// hubble-… = imágenes del Hubble.
-const CODIGO_CIENTIFICO = /^(PIA\d+|iss\d+e\d+|hubble[-_].+)$/i;
-const PICSUM_MAX = 5000; // Picsum no da imágenes más grandes
-const MIN_PROPORCION = 0.75; // la parte recortada debe tener al menos 75 % del ancho de la pantalla
-const MAX_BYTES = 40 * 1024 * 1024; // las originales de la NASA a veces pesan cientos de MB
-const INTENTOS_NASA = 12; // imágenes revisadas por tema
-const TEMAS_POR_INTENTO = 3;
-const NO_SIRVE = /\b(maps?|diagrams?|charts?|graphs?|plots?|logos?|posters?|mosaic key|labeled|annotated)\b/i;
+import {generar} from './generar.js';
 
-const sesion = new Soup.Session({timeout: 60, user_agent: 'fondos-gnome/1'});
+// Búsquedas de Wallhaven. Solo la categoría «general» (sin anime ni fotos de gente) y solo
+// contenido apto para todo público. Los temas con «-» quitan lo que se cuela en la búsqueda.
+const TEMAS = ['abstract', 'minimalism', 'gradient', '3D abstract', 'shapes', 'simple background',
+    'illustration', 'colorful', 'geometry', 'waves'];
+const QUITAR = ' -women -men -cars -anime -logo -Linux -superheroes -cartoon -robot -games';
+// Proporciones que acepta Wallhaven, como ancho / alto.
+const PROPORCIONES = {
+    '9x18': 9 / 18, '9x16': 9 / 16, '10x16': 10 / 16, '1x1': 1, '5x4': 5 / 4, '4x3': 4 / 3, '3x2': 3 / 2,
+    '16x10': 16 / 10, '16x9': 16 / 9, '21x9': 21 / 9, '32x9': 32 / 9, '48x9': 48 / 9,
+};
+const PARECIDA = 0.2; // diferencia máxima de proporción aceptada (en logaritmo, ~22 %)
+const MIN_PROPORCION = 0.75; // la parte recortada debe tener al menos 75 % del ancho de la pantalla
+const MAX_BYTES = 25 * 1024 * 1024;
+const TEMAS_POR_INTENTO = 4;
+const PAGINAS = 3; // de 24 imágenes cada una
+
+const sesion = new Soup.Session({timeout: 60, user_agent: 'fondos-gnome/2'});
 
 export const azar = lista => lista[Math.floor(Math.random() * lista.length)];
 
@@ -38,8 +40,8 @@ function pedir(url, cancelable) {
                 const bytes = s.send_and_read_finish(res);
                 const estado = msg.get_status();
                 if (estado !== Soup.Status.OK)
-                    throw new Error(`${new URL(url).host} respondió ${estado}`);
-                resolver({bytes, uri: msg.get_uri().to_string()});
+                    throw new Error(`${url.split('/')[2] ?? url} respondió ${estado}`);
+                resolver(bytes);
             } catch (e) {
                 rechazar(e);
             }
@@ -48,121 +50,56 @@ function pedir(url, cancelable) {
 }
 
 async function pedirJSON(url, cancelable) {
-    const {bytes} = await pedir(url, cancelable);
+    const bytes = await pedir(url, cancelable);
     return JSON.parse(new TextDecoder().decode(bytes.get_data()));
 }
 
-// Devuelve {bytes, titulo, autor, enlace, fuente, id}. Picsum ya la recorta a ancho × alto.
-export async function deUnsplash(ancho, alto, cancelable) {
-    const f = Math.min(1, PICSUM_MAX / Math.max(ancho, alto));
-    const [w, h] = [Math.round(ancho * f), Math.round(alto * f)];
-    // Picsum redirige a la foto elegida; el número de foto viene en la dirección final.
-    const {bytes, uri} = await pedir(`https://picsum.photos/${w}/${h}`, cancelable);
-    const id = uri.match(/\/id\/(\d+)\//)?.[1];
-    let autor = '', enlace = 'https://unsplash.com';
-    if (id) {
-        try {
-            const info = await pedirJSON(`https://picsum.photos/id/${id}/info`, cancelable);
-            autor = info.author ?? '';
-            enlace = info.url ?? enlace;
-        } catch {
-            // sin autor: la foto sirve igual
-        }
-    }
-    return {bytes, titulo: autor ? `Foto de ${autor}` : 'Foto de Unsplash', autor, enlace, fuente: 'Unsplash',
-        id: `unsplash-${id ?? GLib.uuid_string_random().slice(0, 8)}`};
+// Proporciones de Wallhaven parecidas a la de la pantalla, de la más a la menos parecida.
+export function proporcionesPara(ancho, alto) {
+    const r = ancho / alto;
+    return Object.entries(PROPORCIONES)
+        .map(([clave, v]) => [clave, Math.abs(Math.log(v / r))])
+        .filter(([, d]) => d <= PARECIDA)
+        .sort((a, b) => a[1] - b[1])
+        .map(([clave]) => clave);
 }
 
-// ¿Sirve de fondo para una pantalla de ancho × alto? Al recortarla a la forma de la pantalla
-// debe quedar casi del ancho de la pantalla, y no debe pesar demasiado.
-export function sirveDeFondo(meta, ancho, alto) {
-    const w = Number(meta['File:ImageWidth']), h = Number(meta['File:ImageHeight']);
-    if (!(w > 0 && h > 0))
+// ¿Sirve para una pantalla de ancho × alto? Recortada a la forma de la pantalla debe quedar casi
+// del ancho de la pantalla, y no debe pesar demasiado.
+export function sirve(img, ancho, alto) {
+    const w = img.dimension_x, h = img.dimension_y;
+    if (!(w > 0 && h > 0) || !(img.file_size < MAX_BYTES) || !/\.(jpe?g|png)$/i.test(img.path ?? ''))
         return false;
     const recorteAncho = w / h > ancho / alto ? h * ancho / alto : w;
-    const mb = parseFloat(meta['File:FileSize']);
-    const unidad = String(meta['File:FileSize'] ?? '').match(/[kMG]B/)?.[0] ?? 'MB';
-    const bytes = mb * {kB: 1024, MB: 1024 ** 2, GB: 1024 ** 3}[unidad];
-    return recorteAncho >= ancho * MIN_PROPORCION && !(bytes > MAX_BYTES);
+    return recorteAncho >= ancho * MIN_PROPORCION;
 }
 
-// Mira la imagen en chiquito y descarta:
-//  - las casi grises (relieves, fotos en blanco y negro) y las casi todas blancas (laboratorio);
-//  - los collages de varios paneles: tienen una franja recta y pareja (el separador) que cruza
-//    toda la imagen por en medio, angosta y con imagen a los dos lados.
-const LADO = 200; // px de ancho al revisar
-
-function lineaPareja(valores) {
-    const orden = [...valores].sort((a, b) => a - b);
-    const mediana = orden[orden.length >> 1];
-    return valores.filter(v => Math.abs(v - mediana) <= 10).length / valores.length;
+async function deWallhavenConTema(tema, ancho, alto, cancelable) {
+    const proporciones = proporcionesPara(ancho, alto);
+    // Entre las más guardadas como favoritas (las primeras páginas), no entre todas: al azar
+    // salen muchas de poca calidad.
+    const params = {q: tema + QUITAR, categories: '100', purity: '100', sorting: 'favorites', order: 'desc'};
+    if (proporciones.length)
+        params.ratios = proporciones.join(',');
+    const consulta = Object.entries(params).map(([k, v]) => `${k}=${GLib.uri_escape_string(v, null, false)}`).join('&');
+    const buscar = pagina => pedirJSON(`https://wallhaven.cc/api/v1/search?${consulta}&page=${pagina}`, cancelable);
+    let {data = []} = await buscar(1 + Math.floor(Math.random() * PAGINAS));
+    if (!data.length)
+        ({data = []} = await buscar(1)); // ese tema tiene menos páginas
+    const img = azar(data.filter(i => sirve(i, ancho, alto)));
+    if (!img)
+        throw new Error(`Wallhaven no tiene «${tema}» del tamaño de la pantalla.`);
+    const bytes = await pedir(img.path, cancelable);
+    return {bytes, titulo: `${tema[0].toUpperCase()}${tema.slice(1)} · ${img.resolution}`, autor: '',
+        enlace: img.url, fuente: 'Wallhaven', id: `wallhaven-${img.id}`, ext: img.path.split('.').pop().toLowerCase()};
 }
 
-function tieneSeparador(p) {
-    const datos = p.get_pixels(), n = p.get_n_channels(), fila = p.get_rowstride();
-    const w = p.get_width(), h = p.get_height();
-    const brillo = (x, y) => {
-        const i = y * fila + x * n;
-        return (datos[i] + datos[i + 1] + datos[i + 2]) / 3;
-    };
-    const fila_ = y => Array.from({length: w}, (_, x) => brillo(x, y));
-    const columna = x => Array.from({length: h}, (_, y) => brillo(x, y));
-    // Una franja pareja en medio (no pegada al borde), angosta, con imagen a los dos lados.
-    const revisar = (largo, linea) => {
-        const fraccion = Array.from({length: largo}, (_, k) => lineaPareja(linea(k)));
-        const pareja = fraccion.map(f => f >= 0.97);
-        let k = 0;
-        while (k < largo) {
-            if (!pareja[k]) {
-                k++;
-                continue;
-            }
-            const inicio = k;
-            while (k < largo && pareja[k])
-                k++;
-            const alto = k - inicio;
-            const enMedio = inicio > largo * 0.08 && k < largo * 0.92;
-            // Junto a un separador hay imagen muy variada al menos de un lado (medido: ~0.8). En un
-            // cielo negro con pocas estrellas, los dos lados siguen casi parejos (0.94 o más).
-            const conImagen = Math.min(fraccion[inicio - 1], fraccion[k] ?? 1) < 0.85;
-            if (enMedio && conImagen && alto <= largo * 0.12)
-                return true;
-        }
-        return false;
-    };
-    return revisar(h, fila_) || revisar(w, columna);
-}
-
-export function sirveDeColor(bytes) {
-    const cargador = new GdkPixbuf.PixbufLoader();
-    cargador.connect('size-prepared', (c, w, h) => c.set_size(LADO, Math.max(1, Math.round(LADO * h / w))));
-    try {
-        cargador.write_bytes(bytes);
-        cargador.close();
-    } catch {
-        return false;
-    }
-    const p = cargador.get_pixbuf();
-    const datos = p.get_pixels(), n = p.get_n_channels(), fila = p.get_rowstride();
-    let saturacion = 0, blancos = 0, total = 0;
-    for (let y = 0; y < p.get_height(); y++) {
-        for (let x = 0; x < p.get_width(); x++) {
-            const i = y * fila + x * n;
-            const max = Math.max(datos[i], datos[i + 1], datos[i + 2]), min = Math.min(datos[i], datos[i + 1], datos[i + 2]);
-            saturacion += max === 0 ? 0 : (max - min) / max;
-            if (min > 200)
-                blancos++;
-            total++;
-        }
-    }
-    return saturacion / total >= 0.12 && blancos / total < 0.35 && !tieneSeparador(p);
-}
-
-export async function deNASA(ancho, alto, cancelable) {
+export async function deWallhaven(ancho, alto, cancelable) {
     let ultimo;
-    for (let i = 0; i < TEMAS_POR_INTENTO; i++) {
+    const temas = [...TEMAS].sort(() => Math.random() - 0.5).slice(0, TEMAS_POR_INTENTO);
+    for (const tema of temas) {
         try {
-            return await deNASAconTema(azar(TEMAS_NASA), ancho, alto, cancelable);
+            return await deWallhavenConTema(tema, ancho, alto, cancelable);
         } catch (e) {
             if (cancelable?.is_cancelled())
                 throw e;
@@ -172,67 +109,18 @@ export async function deNASA(ancho, alto, cancelable) {
     throw ultimo;
 }
 
-async function deNASAconTema(tema, ancho, alto, cancelable) {
-    const base = `https://images-api.nasa.gov/search?media_type=image&q=${encodeURIComponent(tema)}`;
-    const primera = await pedirJSON(base, cancelable);
-    const paginas = Math.min(20, Math.ceil((primera.collection?.metadata?.total_hits ?? 0) / 100));
-    if (paginas === 0)
-        throw new Error(`La NASA no encontró imágenes de «${tema}».`);
-    const pagina = 1 + Math.floor(Math.random() * paginas);
-    const datos = pagina === 1 ? primera : await pedirJSON(`${base}&page=${pagina}`, cancelable);
-
-    const candidatos = [...(datos.collection?.items ?? [])].sort(() => Math.random() - 0.5);
-    let revisados = 0;
-    for (const item of candidatos) {
-        if (revisados >= INTENTOS_NASA)
-            break;
-        const info = item.data?.[0];
-        // Si el título es solo el código de archivo, suele ser una foto de trámite.
-        if (!CODIGO_CIENTIFICO.test(info?.nasa_id ?? '') || info.title === info.nasa_id ||
-            NO_SIRVE.test(info.title ?? ''))
-            continue;
-        revisados++; // solo cuentan las que hay que pedir a internet
-        const carpeta = `https://images-assets.nasa.gov/image/${encodeURIComponent(info.nasa_id)}`;
-        let meta;
-        try {
-            meta = await pedirJSON(`${carpeta}/metadata.json`, cancelable);
-        } catch {
-            continue;
-        }
-        if (!sirveDeFondo(meta, ancho, alto))
-            continue;
-        // Los archivos de cada imagen: se prefiere la original en JPG; las TIFF no sirven de fondo.
-        let archivos;
-        try {
-            const lista = await pedirJSON(`https://images-api.nasa.gov/asset/${encodeURIComponent(info.nasa_id)}`, cancelable);
-            archivos = (lista.collection?.items ?? []).map(i => i.href.replace(/^http:/, 'https:'));
-        } catch {
-            continue;
-        }
-        const archivo = ['~orig.jpg', '~large.jpg', '~orig.png', '~orig.jpeg']
-            .map(fin => archivos.find(a => a.toLowerCase().endsWith(fin))).find(Boolean);
-        if (!archivo)
-            continue;
-        const {bytes} = await pedir(encodeURI(decodeURI(archivo)), cancelable);
-        if (!sirveDeColor(bytes))
-            continue;
-        return {bytes, titulo: info.title ?? info.nasa_id, autor: info.center ? `NASA ${info.center}` : 'NASA',
-            enlace: `https://images.nasa.gov/details/${encodeURIComponent(info.nasa_id)}`, fuente: 'NASA',
-            id: `nasa-${info.nasa_id}`.replace(/[^\w.-]/g, '_')};
-    }
-    throw new Error(`No encontré una imagen de la NASA de «${tema}» del tamaño de la pantalla.`);
-}
-
-// fuente: 'ambas' | 'unsplash' | 'nasa'. Con 'ambas', si la elegida falla se prueba la otra.
+// fuente: 'ambas' | 'wallhaven' | 'generados'. Con 'ambas' se elige una al azar; si Wallhaven
+// falla (sin internet), se genera uno aquí mismo.
 export async function traer(fuente, ancho, alto, cancelable) {
-    const cual = fuente === 'ambas' ? azar(['unsplash', 'nasa']) : fuente;
-    const de = c => c === 'nasa' ? deNASA(ancho, alto, cancelable) : deUnsplash(ancho, alto, cancelable);
+    const cual = fuente === 'ambas' ? azar(['wallhaven', 'generados']) : fuente;
+    if (cual === 'generados')
+        return generar(ancho, alto);
     try {
-        return await de(cual);
+        return await deWallhaven(ancho, alto, cancelable);
     } catch (e) {
         if (fuente !== 'ambas' || cancelable?.is_cancelled())
             throw e;
-        return de(cual === 'nasa' ? 'unsplash' : 'nasa');
+        return generar(ancho, alto);
     }
 }
 

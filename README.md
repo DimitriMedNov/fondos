@@ -1,27 +1,31 @@
 # Fondo del día
 
-Extensión de GNOME que cambia el fondo cada 30 minutos con fotos al azar de **Unsplash** y de la
-**NASA**. Con varios monitores pone una foto distinta en cada uno, del tamaño y la forma de esa
-pantalla: una ancha para el ultrawide, una vertical para el monitor vertical.
+Extensión de GNOME que cambia el fondo cada 30 minutos con **fondos abstractos**: arte de
+**Wallhaven** (abstracto, minimalista, 3D, degradados, ilustración) o **dibujados en tu compu**
+(ondas en capas, manchas de papel cortado, arcos con relieve y tubos con luz de borde). Con varios
+monitores pone uno distinto en cada uno, del tamaño y la forma de esa pantalla: uno ancho para el
+ultrawide, uno vertical para el monitor vertical.
 
-![Un ultrawide y un monitor vertical, cada uno con su foto de la NASA](capturas/escritorio.png)
+![Un ultrawide y un monitor vertical, cada uno con su fondo](capturas/escritorio.png)
 
 *Un ultrawide (3440×1440) y un monitor vertical (1080×1920) a su derecha. Lo negro es la zona
 donde no hay pantalla: nunca se ve.*
 
 ## Qué hace
-- **Una foto por pantalla.** GNOME solo deja poner una imagen para todas las pantallas, así que la
-  extensión arma una sola imagen grande donde cada foto cae justo sobre su monitor (opción
+- **Un fondo por pantalla.** GNOME solo deja poner una imagen para todas las pantallas, así que la
+  extensión arma una sola imagen grande donde cada fondo cae justo sobre su monitor (opción
   «spanned» de GNOME). Funciona con monitores de distintos tamaños, verticales y ultrawide.
 - **Cambia sola cada 30 minutos** (también al volver de suspender, si ya pasó ese rato). También
   cambia la pantalla de bloqueo.
-- **Al conectar o quitar un monitor** vuelve a acomodar el fondo: reusa las fotos actuales que
-  tengan la forma de cada pantalla y solo baja foto para las que no tengan.
-- **Unsplash:** fotos al azar ya recortadas al tamaño de tu pantalla, vía [Picsum](https://picsum.photos).
-- **NASA:** de su [biblioteca de imágenes](https://images.nasa.gov): nebulosas, galaxias, planetas y
-  la Tierra desde la estación espacial. Solo imágenes científicas (descarta fotos de prensa y de
-  laboratorio), sin collages de varios paneles, y que recortadas a la forma de tu pantalla sigan
-  siendo grandes.
+- **Al conectar o quitar un monitor** vuelve a acomodar el fondo: reusa los fondos actuales que
+  tengan la forma de cada pantalla y solo busca fondo para las que no tengan.
+- **Wallhaven:** busca en [wallhaven.cc](https://wallhaven.cc) por temas (abstract, minimalism,
+  gradient, 3D abstract, shapes…) con la proporción de cada pantalla (21:9 para el ultrawide, 9:16
+  para el vertical), entre las más guardadas como favoritas. Solo la categoría general y apta para
+  todo público; quita logos, personajes, autos y gente.
+- **Generados:** dibujados con Cairo a la medida exacta de cada pantalla, sin internet y sin
+  repetirse nunca. 4 estilos (ondas, manchas, arcos, tubos), 11 paletas, 7 de cada 10 oscuros.
+- **Wallhaven y generados** (la opción normal) elige uno al azar por pantalla; sin internet, genera.
 - Sin cuentas ni claves.
 
 ## Dónde se controla
@@ -30,11 +34,12 @@ donde no hay pantalla: nunca se ve.*
 En los **Ajustes rápidos** (el menú de arriba a la derecha, el del wifi y la batería) aparece
 **Fondo del día**:
 - El botón prende o apaga el cambio automático.
-- La flechita abre el menú: **Otro fondo ahora**, quién tomó cada foto (clic para verla en la web),
-  de dónde salen (**Unsplash y NASA**, **Solo Unsplash** o **Solo NASA**; al elegir una, el fondo
-  cambia en ese momento) y la carpeta de fotos.
+- La flechita abre el menú: **Otro fondo ahora**, qué fondo hay en cada pantalla (clic: los de
+  Wallhaven abren su página, los generados abren la imagen), de dónde salen (**Wallhaven y
+  generados**, **Solo Wallhaven** o **Solo generados**; al elegir una, el fondo cambia en ese
+  momento) y la carpeta de fondos.
 
-Las fotos se guardan en `~/.local/share/fondos/` (las últimas 24 fotos y 6 fondos armados; las más
+Los fondos se guardan en `~/.local/share/fondos/` (las últimas 24 imágenes y 6 fondos armados; las más
 viejas se borran solas).
 <br clear="right">
 
@@ -52,8 +57,9 @@ Cierra sesión y vuelve a entrar. Funciona en GNOME 48 a 51. Necesita `gjs` (vie
 | Archivo | Qué hace |
 |---|---|
 | `extension.js` | El botón de Ajustes rápidos, el cambio cada 30 min y el cambio al conectar monitores |
-| `componer.js` | Programa aparte (`gjs -m`): baja una foto por pantalla, la recorta y arma la imagen final. Corre fuera de GNOME para que el escritorio no se congele con imágenes grandes |
-| `fuentes.js` | Picsum (Unsplash) y la biblioteca de la NASA, con los filtros de tamaño y color |
+| `componer.js` | Programa aparte (`gjs -m`): consigue una imagen por pantalla, la recorta y arma la imagen final. Corre fuera de GNOME para que el escritorio no se congele con imágenes grandes |
+| `fuentes.js` | Búsqueda en Wallhaven por tema y proporción, con filtro de tamaño |
+| `generar.js` | Los 4 estilos dibujados con Cairo y sus paletas oscuras y claras |
 
 Probar el armado sin GNOME (un ultrawide y un vertical a su derecha):
 ```bash
@@ -62,5 +68,5 @@ gjs -m componer.js '{"carpeta": "/tmp/fondos", "pantallas": [{"x": 0, "y": 480, 
 ```
 
 ## Licencia
-MIT. Las fotos son de sus autores: Unsplash ([licencia de Unsplash](https://unsplash.com/license)) y
-NASA (dominio público, salvo que la imagen diga otra cosa).
+MIT. Las imágenes de Wallhaven son de sus autores; la extensión solo las baja para usarlas de
+fondo en tu compu. Los fondos generados son tuyos.
