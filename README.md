@@ -4,6 +4,11 @@ Extensión de GNOME que cambia el fondo cada mañana con fotos al azar de **Unsp
 **NASA**. Con varios monitores pone una foto distinta en cada uno, del tamaño y la forma de esa
 pantalla: una ancha para el ultrawide, una vertical para el monitor vertical.
 
+![Un ultrawide y un monitor vertical, cada uno con su foto de la NASA](capturas/escritorio.png)
+
+*Un ultrawide (3440×1440) y un monitor vertical (1080×1920) a su derecha. Lo negro es la zona
+donde no hay pantalla: nunca se ve.*
+
 ## Qué hace
 - **Una foto por pantalla.** GNOME solo deja poner una imagen para todas las pantallas, así que la
   extensión arma una sola imagen grande donde cada foto cae justo sobre su monitor (opción
@@ -15,10 +20,13 @@ pantalla: una ancha para el ultrawide, una vertical para el monitor vertical.
 - **Unsplash:** fotos al azar ya recortadas al tamaño de tu pantalla, vía [Picsum](https://picsum.photos).
 - **NASA:** de su [biblioteca de imágenes](https://images.nasa.gov): nebulosas, galaxias, planetas y
   la Tierra desde la estación espacial. Solo imágenes científicas (descarta fotos de prensa y de
-  laboratorio) que, recortadas a la forma de tu pantalla, sigan siendo grandes.
+  laboratorio), sin collages de varios paneles, y que recortadas a la forma de tu pantalla sigan
+  siendo grandes.
 - Sin cuentas ni claves.
 
 ## Dónde se controla
+<img src="capturas/menu.png" alt="Menú de Fondo del día en los Ajustes rápidos" width="366" align="right">
+
 En los **Ajustes rápidos** (el menú de arriba a la derecha, el del wifi y la batería) aparece
 **Fondo del día**:
 - El botón prende o apaga el cambio diario.
@@ -27,6 +35,7 @@ En los **Ajustes rápidos** (el menú de arriba a la derecha, el del wifi y la b
 
 Las fotos se guardan en `~/.local/share/fondos/` (las últimas 24 fotos y 6 fondos armados; las más
 viejas se borran solas).
+<br clear="right">
 
 ## Instalar
 ```bash

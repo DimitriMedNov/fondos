@@ -86,11 +86,56 @@ export function sirveDeFondo(meta, ancho, alto) {
     return recorteAncho >= ancho * MIN_PROPORCION && !(bytes > MAX_BYTES);
 }
 
-// Mira la imagen en chiquito: descarta las casi grises (relieves, fotos en blanco y negro) y las
-// casi todas blancas (fotos de laboratorio).
+// Mira la imagen en chiquito y descarta:
+//  - las casi grises (relieves, fotos en blanco y negro) y las casi todas blancas (laboratorio);
+//  - los collages de varios paneles: tienen una franja recta y pareja (el separador) que cruza
+//    toda la imagen por en medio, angosta y con imagen a los dos lados.
+const LADO = 200; // px de ancho al revisar
+
+function lineaPareja(valores) {
+    const orden = [...valores].sort((a, b) => a - b);
+    const mediana = orden[orden.length >> 1];
+    return valores.filter(v => Math.abs(v - mediana) <= 10).length / valores.length;
+}
+
+function tieneSeparador(p) {
+    const datos = p.get_pixels(), n = p.get_n_channels(), fila = p.get_rowstride();
+    const w = p.get_width(), h = p.get_height();
+    const brillo = (x, y) => {
+        const i = y * fila + x * n;
+        return (datos[i] + datos[i + 1] + datos[i + 2]) / 3;
+    };
+    const fila_ = y => Array.from({length: w}, (_, x) => brillo(x, y));
+    const columna = x => Array.from({length: h}, (_, y) => brillo(x, y));
+    // Una franja pareja en medio (no pegada al borde), angosta, con imagen a los dos lados.
+    const revisar = (largo, linea) => {
+        const fraccion = Array.from({length: largo}, (_, k) => lineaPareja(linea(k)));
+        const pareja = fraccion.map(f => f >= 0.97);
+        let k = 0;
+        while (k < largo) {
+            if (!pareja[k]) {
+                k++;
+                continue;
+            }
+            const inicio = k;
+            while (k < largo && pareja[k])
+                k++;
+            const alto = k - inicio;
+            const enMedio = inicio > largo * 0.08 && k < largo * 0.92;
+            // Junto a un separador hay imagen muy variada al menos de un lado (medido: ~0.8). En un
+            // cielo negro con pocas estrellas, los dos lados siguen casi parejos (0.94 o más).
+            const conImagen = Math.min(fraccion[inicio - 1], fraccion[k] ?? 1) < 0.85;
+            if (enMedio && conImagen && alto <= largo * 0.12)
+                return true;
+        }
+        return false;
+    };
+    return revisar(h, fila_) || revisar(w, columna);
+}
+
 export function sirveDeColor(bytes) {
     const cargador = new GdkPixbuf.PixbufLoader();
-    cargador.connect('size-prepared', (c, w, h) => c.set_size(48, Math.max(1, Math.round(48 * h / w))));
+    cargador.connect('size-prepared', (c, w, h) => c.set_size(LADO, Math.max(1, Math.round(LADO * h / w))));
     try {
         cargador.write_bytes(bytes);
         cargador.close();
@@ -110,7 +155,7 @@ export function sirveDeColor(bytes) {
             total++;
         }
     }
-    return saturacion / total >= 0.12 && blancos / total < 0.35;
+    return saturacion / total >= 0.12 && blancos / total < 0.35 && !tieneSeparador(p);
 }
 
 export async function deNASA(ancho, alto, cancelable) {
