@@ -1,7 +1,7 @@
 {
   "uuid": "fondos@dimitrimednov.github.io",
   "name": "Fondo del día",
-  "description": "Cambia el fondo cada mañana con fotos al azar de Unsplash y de la NASA. Con varios monitores pone una foto distinta en cada uno, del tamaño y la forma de esa pantalla (también ultrawide y vertical). Se controla desde los Ajustes rápidos.",
+  "description": "Cambia el fondo cada 30 minutos con fotos al azar de Unsplash y de la NASA. Con varios monitores pone una foto distinta en cada uno, del tamaño y la forma de esa pantalla (también ultrawide y vertical). Se controla desde los Ajustes rápidos.",
   "shell-version": ["48", "49", "50", "51"],
   "url": "https://github.com/DimitriMedNov/fondos",
   "settings-schema": "org.gnome.shell.extensions.fondos",

@@ -1,6 +1,6 @@
-// Fondo del día: cada mañana pone fotos nuevas de Unsplash y de la NASA, una por pantalla y con la
+// Fondo del día: cada 30 minutos pone fotos nuevas de Unsplash y de la NASA, una por pantalla y con la
 // forma de cada una (ultrawide, vertical, normal). Se controla desde los Ajustes rápidos (el menú
-// del wifi y la batería): prender o apagar el cambio diario, otro fondo ahora, de dónde salen las
+// del wifi y la batería): prender o apagar el cambio automático, otro fondo ahora, de dónde salen las
 // fotos y quién las tomó. El trabajo pesado (bajar y recortar) lo hace componer.js aparte.
 
 import Gio from 'gi://Gio';
@@ -13,13 +13,15 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {QuickMenuToggle, SystemIndicator} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 
-const ICONO = 'preferences-desktop-wallpaper-symbolic';
-const REVISAR_CADA = 15 * 60; // s: si cambió el día (o volviste de suspender), cambia el fondo
+// Icono propio (foto con montañas y sol). "-symbolic" hace que GNOME lo pinte del color del tema.
+let ICONO = null;
+const CAMBIAR_CADA = 30 * 60; // s entre un fondo y el siguiente
+const REVISAR_CADA = 60; // s: revisa seguido para no pasarse de los 30 min (también al volver de suspender)
 const PRIMERA_REVISION = 20; // s tras entrar: deja que arranque la red
 const ESPERA_MONITORES = 4; // s: al conectar un monitor llegan varios avisos seguidos
 const FUENTES = [['ambas', 'Unsplash y NASA'], ['unsplash', 'Solo Unsplash'], ['nasa', 'Solo NASA']];
 
-const hoy = () => GLib.DateTime.new_now_local().format('%Y-%m-%d');
+const ahora = () => Math.floor(GLib.get_real_time() / 1e6); // s
 
 function abrir(uri) {
     try {
@@ -40,7 +42,7 @@ function leerPantallas() {
 const Interruptor = GObject.registerClass(
 class Interruptor extends QuickMenuToggle {
     _init(ext) {
-        super._init({title: 'Fondo del día', iconName: ICONO, toggleMode: true});
+        super._init({title: 'Fondo del día', gicon: ICONO, toggleMode: true});
         this._ext = ext;
         this._settings = ext.getSettings();
         this._settings.bind('auto', this, 'checked', Gio.SettingsBindFlags.DEFAULT);
@@ -78,7 +80,7 @@ class Interruptor extends QuickMenuToggle {
         const nombreFuente = FUENTES.find(([c]) => c === fuente)?.[1] ?? '';
         this.subtitle = ocupado ? 'Buscando fotos…' : nombreFuente.replace('Solo ', '');
         this.menu.setHeader(ICONO, 'Fondo del día',
-            ocupado ? 'Buscando fotos…' : auto ? 'Cambia cada mañana' : 'Apagado: el fondo no cambia solo');
+            ocupado ? 'Buscando fotos…' : auto ? 'Cambia cada 30 min' : 'Apagado: el fondo no cambia solo');
         this._otro.label.text = ocupado ? 'Buscando fotos…' : error ? `Reintentar (${error})` : 'Otro fondo ahora';
         this._otro.setSensitive(!ocupado);
         for (const [clave, item] of this._fuentes)
@@ -116,6 +118,7 @@ class Indicador extends SystemIndicator {
 
 export default class Fondos extends Extension {
     enable() {
+        ICONO = Gio.FileIcon.new(this.dir.get_child('icons').get_child('fondos-symbolic.svg'));
         this._settings = this.getSettings();
         this.carpeta = GLib.build_filenamev([GLib.get_user_data_dir(), 'fondos']);
         this.ocupado = false;
@@ -148,8 +151,13 @@ export default class Fondos extends Extension {
                 return GLib.SOURCE_REMOVE;
             });
         }, this);
-        // Si apagaste el cambio diario y lo vuelves a prender, el fondo cambia ese mismo día.
-        this._settings.connectObject('changed::auto', () => this._revisar(), this);
+        this._pendiente = false;
+        this._settings.connectObject(
+            // Si apagaste el cambio automático y lo prendes, cambia si ya pasaron los 30 min.
+            'changed::auto', () => this._revisar(),
+            // Al elegir otra fuente, fondo nuevo de inmediato (por si el actual no te gusta).
+            'changed::fuente', () => this.cambiar({manual: true}),
+            this);
     }
 
     disable() {
@@ -165,10 +173,11 @@ export default class Fondos extends Extension {
         this._indicador?.destroy();
         this._indicador = null;
         this._settings = null;
+        ICONO = null;
     }
 
     _revisar() {
-        if (this._settings.get_boolean('auto') && this._settings.get_string('ultimo-dia') !== hoy())
+        if (this._settings.get_boolean('auto') && ahora() - this._settings.get_int64('ultimo-cambio') >= CAMBIAR_CADA)
             this.cambiar({manual: false});
     }
 
@@ -185,8 +194,12 @@ export default class Fondos extends Extension {
 
     // Corre componer.js y, si sale bien, pone el resultado de fondo (y de pantalla de bloqueo).
     async cambiar({manual, reusar = false}) {
-        if (this.ocupado)
+        if (this.ocupado) {
+            // Ya está buscando: cuando termine, busca otra vez con la fuente nueva.
+            if (manual)
+                this._pendiente = true;
             return;
+        }
         this.ocupado = true;
         this.error = null;
         this._actualizar();
@@ -210,7 +223,7 @@ export default class Fondos extends Extension {
             this.estado = {archivo: resultado.archivo, fotos: resultado.fotos, pantallas};
             this._settings.set_string('estado', JSON.stringify(this.estado));
             if (!reusar)
-                this._settings.set_string('ultimo-dia', hoy());
+                this._settings.set_int64('ultimo-cambio', ahora());
             if (resultado.avisos?.length)
                 console.warn(`Fondo del día: ${resultado.avisos.join(' · ')}`);
         } catch (e) {
@@ -221,6 +234,10 @@ export default class Fondos extends Extension {
         } finally {
             this.ocupado = false;
             this._actualizar();
+            if (this._pendiente && this._settings) {
+                this._pendiente = false;
+                this.cambiar({manual: true});
+            }
         }
     }
 

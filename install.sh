@@ -29,6 +29,7 @@ PY
 
 mkdir -p "$EXT/schemas"
 cp extension/*.js extension/metadata.json "$EXT/"
+mkdir -p "$EXT/icons" && cp extension/icons/*.svg "$EXT/icons/"
 cp extension/schemas/*.gschema.xml "$EXT/schemas/"
 glib-compile-schemas "$EXT/schemas"
 activar

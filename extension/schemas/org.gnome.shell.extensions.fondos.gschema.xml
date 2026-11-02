@@ -3,7 +3,7 @@
   <schema id="org.gnome.shell.extensions.fondos" path="/org/gnome/shell/extensions/fondos/">
     <key name="auto" type="b">
       <default>true</default>
-      <summary>Cambiar el fondo cada día</summary>
+      <summary>Cambiar el fondo cada 30 minutos</summary>
     </key>
     <key name="fuente" type="s">
       <choices>
@@ -14,9 +14,9 @@
       <default>'ambas'</default>
       <summary>De dónde salen las fotos</summary>
     </key>
-    <key name="ultimo-dia" type="s">
-      <default>''</default>
-      <summary>Día del último cambio (AAAA-MM-DD)</summary>
+    <key name="ultimo-cambio" type="x">
+      <default>0</default>
+      <summary>Hora del último cambio automático (segundos Unix)</summary>
     </key>
     <key name="estado" type="s">
       <default>''</default>
