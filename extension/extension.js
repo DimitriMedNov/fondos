@@ -31,6 +31,52 @@ function abrir(uri) {
     }
 }
 
+// Blur my Shell arma el difuminado de la barra con el fondo del monitor donde está la barra. Al
+// conectar o quitar un monitor lo rehace antes de que GNOME mueva la barra al monitor principal,
+// y se queda con el fondo (y el ancho) del otro monitor. Apagar y prender su "static-blur" lo
+// obliga a rehacerlo con la barra ya en su lugar. Solo actúa si Blur my Shell está activa y usa
+// difuminado estático; si no, no hace nada.
+const BLUR_MY_SHELL = 'blur-my-shell@aunetx';
+let esperaBarra = 0, ajustesBarra = null;
+
+function refrescarBarraDifuminada() {
+    const ext = Main.extensionManager.lookup(BLUR_MY_SHELL);
+    if (!ext || ext.state !== 1) // 1 = ACTIVE
+        return;
+    let ajustes;
+    try {
+        const fuente = Gio.SettingsSchemaSource.new_from_directory(GLib.build_filenamev([ext.path, 'schemas']),
+            Gio.SettingsSchemaSource.get_default(), false);
+        const esquema = fuente.lookup('org.gnome.shell.extensions.blur-my-shell.panel', true);
+        if (!esquema)
+            return;
+        ajustes = new Gio.Settings({settings_schema: esquema, path: '/org/gnome/shell/extensions/blur-my-shell/panel/'});
+    } catch (e) {
+        console.warn(`Fondo del día: no pude leer Blur my Shell: ${e.message}`);
+        return;
+    }
+    if (!ajustes.get_boolean('static-blur') || esperaBarra)
+        return;
+    ajustesBarra = ajustes;
+    ajustes.set_boolean('static-blur', false);
+    esperaBarra = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+        esperaBarra = 0;
+        ajustes.set_boolean('static-blur', true);
+        ajustesBarra = null;
+        return GLib.SOURCE_REMOVE;
+    });
+}
+
+// Al apagar Fondos a la mitad del refresco, deja el difuminado prendido como estaba.
+function cancelarRefrescoBarra() {
+    if (!esperaBarra)
+        return;
+    GLib.source_remove(esperaBarra);
+    esperaBarra = 0;
+    ajustesBarra?.set_boolean('static-blur', true);
+    ajustesBarra = null;
+}
+
 // Lugar y tamaño de cada pantalla, en el orden de GNOME.
 function leerPantallas() {
     return Main.layoutManager.monitors.map((m, i) => ({
@@ -170,6 +216,7 @@ export default class Fondos extends Extension {
                 GLib.source_remove(id);
         }
         this._revision = this._esperaMonitores = 0;
+        cancelarRefrescoBarra();
         this._proceso?.force_exit();
         this._proceso = null;
         this._indicador?.destroy();
@@ -184,6 +231,8 @@ export default class Fondos extends Extension {
     }
 
     _alCambiarMonitores() {
+        // La barra ya está en su monitor: que Blur my Shell rehaga su difuminado.
+        refrescarBarraDifuminada();
         // Mismas pantallas que el fondo actual: nada que hacer.
         if (!this.estado || JSON.stringify(leerPantallas()) === JSON.stringify(this.estado.pantallas))
             return;
@@ -223,6 +272,7 @@ export default class Fondos extends Extension {
             bloqueo.set_string('picture-uri', uri);
 
             this.estado = {archivo: resultado.archivo, fotos: resultado.fotos, pantallas};
+            refrescarBarraDifuminada();
             this._settings.set_string('estado', JSON.stringify(this.estado));
             if (!reusar)
                 this._settings.set_int64('ultimo-cambio', ahora());
